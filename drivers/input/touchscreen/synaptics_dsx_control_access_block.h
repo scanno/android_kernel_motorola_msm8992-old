@@ -23,7 +23,7 @@ int control_access_block_update_wo(unsigned char gid, unsigned short paddr,
 	unsigned char sz, unsigned char mask, unsigned char *data);
 void control_access_block_zap(unsigned char gid);
 #else
-static inline struct touch_control_access_block *control_access_block_get(void) {
+inline struct touch_control_access_block *control_access_block_get(void) {
 	return NULL;
 }
 static int inline control_access_block_update_ro(
