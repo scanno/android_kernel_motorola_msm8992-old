@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2015 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -54,11 +54,6 @@
 #ifndef DEBUG_CREDIT
 #define DEBUG_CREDIT 0
 #endif
-
-extern int dumpEnable;
-void htt_rx_print_rx_indication(
-    adf_nbuf_t rx_ind_msg,
-    htt_pdev_handle pdev);
 
 static u_int8_t *
 htt_t2h_mac_addr_deswizzle(u_int8_t *tgt_mac_addr, u_int8_t *buffer)
@@ -151,6 +146,7 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
     switch (msg_type) {
     case HTT_T2H_MSG_TYPE_VERSION_CONF:
         {
+            htc_pm_runtime_put(pdev->htc_pdev);
             pdev->tgt_ver.major = HTT_VER_CONF_MAJOR_GET(*msg_word);
             pdev->tgt_ver.minor = HTT_VER_CONF_MINOR_GET(*msg_word);
             adf_os_print("target uses HTT version %d.%d; host uses %d.%d\n",
@@ -182,11 +178,6 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
             action =
                 HTT_RX_FLUSH_MPDU_STATUS_GET(*(msg_word+1)) == 1 ?
                 htt_rx_flush_release : htt_rx_flush_discard;
-            if(dumpEnable == 1)
-                VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-                        "RX_FLUSH: peer_id %x, tid %x, seq_num_start %x,seq_num_end %x, action %d\n",
-                    peer_id, tid, seq_num_start, seq_num_end, action);
-
             ol_rx_flush_handler(
                 pdev->txrx_pdev,
                 peer_id, tid,
@@ -237,11 +228,6 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
             peer_id = HTT_RX_ADDBA_PEER_ID_GET(*msg_word);
             tid = HTT_RX_ADDBA_TID_GET(*msg_word);
             win_sz = HTT_RX_ADDBA_WIN_SIZE_GET(*msg_word);
-            if(dumpEnable == 1)
-                VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-                        "RX_ADDBA: peer_id %x, tid %x, win_sz %d\n",
-                    peer_id, tid, win_sz);
-
             ol_rx_addba_handler(
                 pdev->txrx_pdev, peer_id, tid, win_sz, start_seq_num,
                 0 /* success */);
@@ -254,10 +240,6 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
 
             peer_id = HTT_RX_DELBA_PEER_ID_GET(*msg_word);
             tid = HTT_RX_DELBA_TID_GET(*msg_word);
-            if(dumpEnable == 1)
-                VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-                        "RX_DelBA: peer_id %x, tid %x\n",
-                    peer_id, tid);
             ol_rx_delba_handler(pdev->txrx_pdev, peer_id, tid);
             break;
         }
@@ -309,6 +291,7 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
             }
             ol_tx_single_completion_handler(
                 pdev->txrx_pdev, compl_msg->status, compl_msg->desc_id);
+            htc_pm_runtime_put(pdev->htc_pdev);
             HTT_TX_SCHED(pdev);
             break;
         }
@@ -322,6 +305,7 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
             cookie |= ((u_int64_t) (*(msg_word + 2))) << 32;
 
             stats_info_list = (u_int8_t *) (msg_word + 3);
+            htc_pm_runtime_put(pdev->htc_pdev);
             ol_txrx_fw_stats_handler(pdev->txrx_pdev, cookie, stats_info_list);
             break;
         }
@@ -372,6 +356,7 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
             u_int8_t *op_msg_buffer;
             u_int8_t *msg_start_ptr;
 
+            htc_pm_runtime_put(pdev->htc_pdev);
             msg_start_ptr = (u_int8_t *)msg_word;
             op_code = HTT_WDI_IPA_OP_RESPONSE_OP_CODE_GET(*msg_word);
             msg_word++;
@@ -433,10 +418,6 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
 
     msg_word = (u_int32_t *) adf_nbuf_data(htt_t2h_msg);
     msg_type = HTT_T2H_MSG_TYPE_GET(*msg_word);
-    if ((dumpEnable == 1) && (msg_type != 8))
-       VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-               "%s: HTT_msg_type: %d, word1: 0x%02x, word2: 0x%02x \n", __func__, msg_type, *msg_word, *(msg_word+1));
-
     switch (msg_type) {
     case HTT_T2H_MSG_TYPE_RX_IND:
         {
@@ -444,9 +425,6 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
             unsigned num_msdu_bytes;
             u_int16_t peer_id;
             u_int8_t tid;
-
-            if(dumpEnable == 1)
-                htt_rx_print_rx_indication(htt_t2h_msg, pdev);
 
             if (adf_os_unlikely(pdev->cfg.is_full_reorder_offload)) {
                 adf_os_print("HTT_T2H_MSG_TYPE_RX_IND not supported with full "
@@ -539,10 +517,6 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
             seq_num_start = HTT_RX_PN_IND_SEQ_NUM_START_GET(*msg_word);
             seq_num_end = HTT_RX_PN_IND_SEQ_NUM_END_GET(*msg_word);
             pn_ie_cnt = HTT_RX_PN_IND_PN_IE_CNT_GET(*msg_word);
-            if(dumpEnable == 1)
-                VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-                        "RX_PN_IND: peer_id %x, tid %x, seq_start %x,seq_end %x, pn_ie_cnt %d\n",
-                    peer_id, tid, seq_num_start, seq_num_end, pn_ie_cnt);
 
             msg_word++;
             /*Third dword*/

@@ -632,12 +632,15 @@ typedef enum  eSmpsModeValue{
 // Msg Type = SIR_LIM_DELETE_STA_CONTEXT_IND
 //
 typedef struct {
+    bool        is_tdls;
+    tANI_U8     vdev_id;
     tANI_U16    assocId;
     tANI_U16    staId;
     tSirMacAddr bssId; // TO SUPPORT BT-AMP
                        // HAL copies bssid from the sta table.
     tSirMacAddr addr2;        //
     tANI_U16    reasonCode;   // To unify the keepalive / unknown A2 / tim-based disa
+    tANI_S8     rssi;
 } tDeleteStaContext, * tpDeleteStaContext;
 
 
@@ -1416,12 +1419,13 @@ typedef struct sMaxTxPowerPerBandParams
 
 typedef struct sAddStaSelfParams
 {
-   tSirMacAddr selfMacAddr;
-   tVOS_CON_MODE currDeviceMode;
+   tSirMacAddr     selfMacAddr;
+   tVOS_CON_MODE   currDeviceMode;
    tANI_U32        type;
    tANI_U32        subType;
    tANI_U8         sessionId;
-   tANI_U32 status;
+   tANI_U32        status;
+   tANI_U16        pkt_err_disconn_th;
 }tAddStaSelfParams, *tpAddStaSelfParams;
 
 #ifdef FEATURE_WLAN_TDLS

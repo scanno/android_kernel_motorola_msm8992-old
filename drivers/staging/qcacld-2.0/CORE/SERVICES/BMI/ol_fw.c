@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2015 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -57,62 +57,6 @@
 #include "qwlan_version.h"
 
 #ifdef FEATURE_SECURE_FIRMWARE
-
-static u8 fw_mem[MAX_FIRMWARE_SIZE];
-static struct hash_fw fw_hash = {
-
-/* qwlan30.bin sha256sum hash */
-{
-0xdb, 0x75, 0xc1, 0x85, 0xcc, 0x50, 0x1a, 0xae, 0xa2, 0xcf,
-0xe5, 0xde, 0x94, 0x17, 0x35, 0x86, 0xdc, 0x1e, 0xca, 0x6b,
-0x56, 0x09, 0x91, 0xc7, 0x97, 0xc1, 0xc7, 0x9f, 0xc3, 0xb5,
-0x4d, 0x67,
-},
-
-/* otp30.bin sha256sum hash */
-{
-0xf8, 0x46, 0x08, 0x53, 0x25, 0x9d, 0xd2, 0x1f, 0xeb, 0x12,
-0xc5, 0x22, 0x14, 0x22, 0x1a, 0xf5, 0x35, 0x15, 0xff, 0xf7,
-0x1a, 0xa7, 0x5f, 0x79, 0x44, 0xd7, 0xfe, 0x58, 0xe1, 0xf3,
-0xed, 0xd4,
-},
-
-/* bdwlan30.bin sha256sum hash */
-#ifdef CONFIG_MSM8994
-{
-0x9c, 0x4f, 0xb2, 0xd3, 0x9a, 0xbf, 0xf0, 0x0a, 0x5f, 0x78,
-0x92, 0xcf, 0x03, 0x58, 0x03, 0xfc, 0x5a, 0xb6, 0xd8, 0xa0,
-0xfb, 0x6d, 0xcc, 0x7b, 0x4e, 0x06, 0x67, 0xda, 0x0e, 0xfd,
-0xd9, 0x1f,
-},
-#else /* Clark */
-#ifdef CNSS_LOCALE_argentina
-{
-0x0f, 0xcb, 0xcd, 0x2b, 0x8f, 0x5c, 0xb5, 0xd8, 0xdc, 0xbd,
-0x91, 0xaf, 0x29, 0x27, 0x11, 0x73, 0xce, 0x11, 0x7d, 0x8d,
-0x5a, 0x6c, 0x5e, 0x22, 0xb1, 0x29, 0x65, 0x7a, 0x18, 0x87,
-0x29, 0xc5,
-},
-#else
-{
-0x26, 0xdd, 0xa9, 0xc1, 0xc1, 0x61, 0xb9, 0xb4, 0xbb, 0xf8,
-0xac, 0xc0, 0xa8, 0xd0, 0x39, 0xa7, 0x83, 0xe6, 0x12, 0x20,
-0x94, 0xb5, 0xa7, 0x3c, 0xf3, 0xc0, 0xb9, 0xd7, 0x13, 0x8f,
-0x96, 0xac,
-},
-#endif
-#endif
-
-/* utf30.bin sha256sum hash */
-{
-0x60, 0xdc, 0xee, 0xb9, 0xad, 0x63, 0x95, 0x98, 0x24, 0xba,
-0xc6, 0x98, 0x31, 0x75, 0x38, 0xe7, 0xb1, 0x4b, 0x6c, 0x60,
-0xf2, 0xb4, 0x40, 0xad, 0xe3, 0x93, 0xb3, 0xa8, 0xb4, 0x33,
-0x54, 0x37,
-},
-
-};
-#else
 static struct hash_fw fw_hash;
 #endif
 
@@ -420,8 +364,9 @@ exit:
 }
 
 #ifdef FEATURE_SECURE_FIRMWARE
-static int ol_check_fw_hash(const u8* data, u32 data_size, ATH_BIN_FILE file)
+static int ol_check_fw_hash(const u8* data, u32 fw_size, ATH_BIN_FILE file)
 {
+	u8 *fw_mem = NULL;
 	u8 *hash = NULL;
 #ifdef CONFIG_CNSS
 	u8 digest[SHA256_DIGEST_SIZE];
@@ -458,8 +403,18 @@ static int ol_check_fw_hash(const u8* data, u32 data_size, ATH_BIN_FILE file)
 		goto end;
 	}
 
+	fw_mem = (u8 *)cnss_get_fw_ptr();
+
+	if (!fw_mem || (fw_size > MAX_FIRMWARE_SIZE)) {
+		pr_err("No enough memory to copy FW data\n");
+		ret = A_ERROR;
+		goto end;
+	}
+
+	OS_MEMCPY(fw_mem, data, fw_size);
+
 #ifdef CONFIG_CNSS
-	ret = cnss_get_sha_hash(data, data_size, "sha256", digest);
+	ret = cnss_get_sha_hash(fw_mem, fw_size, "sha256", digest);
 
 	if (ret) {
 		pr_err("Sha256 Hash computation fialed err:%d\n", ret);
@@ -650,14 +605,6 @@ static int __ol_transfer_bin_file(struct ol_softc *scn, ATH_BIN_FILE file,
 	tempEeprom = NULL;
 
 #ifdef FEATURE_SECURE_FIRMWARE
-	if (fw_entry_size <= MAX_FIRMWARE_SIZE) {
-		OS_MEMCPY(fw_mem, fw_entry->data, fw_entry_size);
-	} else {
-		pr_err("%s: No enough memory to copy FW data!", __func__);
-		status = A_ERROR;
-		goto end;
-	}
-
 	if (scn->enable_fw_hash_check &&
 	    ol_check_fw_hash(fw_entry->data, fw_entry_size, file)) {
 		pr_err("Hash Check failed for file:%s\n", filename);
@@ -987,7 +934,7 @@ static void ramdump_work_handler(struct work_struct *ramdump)
 		goto out_fail;
 
 	printk("%s: RAM dump collecting completed!\n", __func__);
-	msleep(250);
+
 #if defined(HIF_SDIO)
 	panic("CNSS Ram dump collected\n");
 #else
@@ -1129,9 +1076,9 @@ void ol_ramdump_handler(struct ol_softc *scn)
 			fw_ram_seg_addr[i] = (scn->ramdump[i])->mem;
 			pr_err("FW %s start addr = %#08x\n",
 				fw_ram_seg_name[i], *reg);
-			pr_err("Memory addr for %s = %#08x\n",
+			pr_err("Memory addr for %s = %p\n",
 				fw_ram_seg_name[i],
-				(A_UINT32) (scn->ramdump[i])->mem);
+				(scn->ramdump[i])->mem);
 			(scn->ramdump[i])->start_addr = *reg;
 			(scn->ramdump[i])->length = 0;
 		}
@@ -1160,6 +1107,8 @@ void ol_ramdump_handler(struct ol_softc *scn)
 void ol_target_failure(void *instance, A_STATUS status)
 {
 	struct ol_softc *scn = (struct ol_softc *)instance;
+	void *vos_context = vos_get_global_context(VOS_MODULE_ID_WDA, NULL);
+	tp_wma_handle wma = vos_get_context(VOS_MODULE_ID_WDA, vos_context);
 #ifndef CONFIG_CNSS
 	A_UINT32 reg_dump_area = 0;
 	A_UINT32 reg_dump_values[REGISTER_DUMP_LEN_MAX];
@@ -1169,8 +1118,6 @@ void ol_target_failure(void *instance, A_STATUS status)
 	struct dbglog_hdr_host dbglog_hdr;
 	struct dbglog_buf_host dbglog_buf;
 	A_UINT8 *dbglog_data;
-	void *vos_context = vos_get_global_context(VOS_MODULE_ID_WDA, NULL);
-	tp_wma_handle wma = vos_get_context(VOS_MODULE_ID_WDA, vos_context);
 #else
 	int ret;
 #endif
@@ -1184,12 +1131,19 @@ void ol_target_failure(void *instance, A_STATUS status)
 	}
 #endif
 
+	vos_event_set(&wma->recovery_event);
+
 	if (OL_TRGET_STATUS_RESET == scn->target_status) {
 		printk("Target is already asserted, ignore!\n");
 		return;
 	}
 
 	scn->target_status = OL_TRGET_STATUS_RESET;
+
+	if (vos_is_logp_in_progress(VOS_MODULE_ID_VOSS, NULL)) {
+		pr_info("%s: LOGP is in progress, ignore!\n", __func__);
+		return;
+	}
 
 	if (vos_is_load_unload_in_progress(VOS_MODULE_ID_VOSS, NULL)) {
 		printk("%s: Loading/Unloading is in progress, ignore!\n",
@@ -1201,8 +1155,10 @@ void ol_target_failure(void *instance, A_STATUS status)
 #ifdef CONFIG_CNSS
 	ret = hif_pci_check_fw_reg(scn->hif_sc);
 	if (0 == ret) {
-		ol_schedule_fw_indication_work(scn);
-		return;
+		if (scn->enable_self_recovery) {
+			ol_schedule_fw_indication_work(scn);
+			return;
+		}
 	} else if (-1 == ret) {
 		return;
 	}
@@ -1236,6 +1192,11 @@ void ol_target_failure(void *instance, A_STATUS status)
 	printk("Target Register Dump\n");
 	for (i = 0; i < reg_dump_cnt; i++) {
 		printk("[%02d]   :  0x%08X\n", i, reg_dump_values[i]);
+	}
+
+	if (!scn->enablefwlog) {
+		printk("%s: FWLog is disabled in ini\n", __func__);
+		goto disable_fwlog;
 	}
 
 	if (HIFDiagReadMem(scn->hif_hdl,
@@ -1285,6 +1246,8 @@ void ol_target_failure(void *instance, A_STATUS status)
 
 	    adf_os_mem_free(dbglog_data);
 	}
+
+disable_fwlog:
 #endif
 
 #if  defined(CONFIG_CNSS) || defined(HIF_SDIO)
@@ -2268,9 +2231,20 @@ int ol_target_coredump(void *inst, void *memoryBlock, u_int32_t blockLength)
 	* SECTION = REG
 	* START   = 0x00000800
 	* LENGTH  = 0x0007F820
+	*
+	* SECTION = IRAM1
+	* START   = 0x00980000
+	* LENGTH  = 0x00080000
+	*
+	* SECTION = IRAM2
+	* START   = 0x00a00000
+	* LENGTH  = 0x00040000
 	*/
-
+#ifdef HIF_PCI
+	while ((sectionCount < 5) && (amountRead < blockLength)) {
+#else
 	while ((sectionCount < 3) && (amountRead < blockLength)) {
+#endif
 		switch (sectionCount) {
 		case 0:
 			/* DRAM SECTION */
@@ -2291,6 +2265,35 @@ int ol_target_coredump(void *inst, void *memoryBlock, u_int32_t blockLength)
 			readLen = 0;
 			printk("%s: Dumping Register section...\n", __func__);
 			break;
+#ifdef HIF_PCI
+		case 3:
+			if ((scn->target_status != OL_TRGET_STATUS_RESET) ||
+				hif_pci_set_ram_config_reg(scn->hif_sc,
+							IRAM1_LOCATION >> 20)) {
+				pr_debug("%s: Skipping IRAM1 section...\n",
+					__func__);
+				return 0;
+			}
+
+			/* IRAM1 SECTION */
+			pos = IRAM1_LOCATION;
+			readLen = IRAM1_SIZE;
+			pr_err("%s: Dumping IRAM1 section...\n", __func__);
+			break;
+		case 4:
+			if (hif_pci_set_ram_config_reg(scn->hif_sc,
+							IRAM2_LOCATION >> 20)) {
+				pr_debug("%s: Skipping IRAM2 section...\n",
+					__func__);
+				return 0;
+			}
+
+			/* IRAM2 SECTION */
+			pos = IRAM2_LOCATION;
+			readLen = IRAM2_SIZE;
+			pr_err("%s: Dumping IRAM2 section...\n", __func__);
+			break;
+#endif
 		}
 
 		if ((blockLength - amountRead) >= readLen) {
@@ -2340,6 +2343,7 @@ u_int8_t ol_get_number_of_peers_supported(struct ol_softc *scn)
 
 	switch (scn->target_version) {
 		case AR6320_REV1_1_VERSION:
+		case AR6320_REV2_1_VERSION:
 			if(scn->max_no_of_peers > MAX_SUPPORTED_PEERS_REV1_1)
 				max_no_of_peers = MAX_SUPPORTED_PEERS_REV1_1;
 			else
